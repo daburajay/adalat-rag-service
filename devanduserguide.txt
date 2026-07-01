@@ -1,0 +1,661 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                    ADALATMITRA RAG SERVICE                                 ║
+║           User & Developer Guide - Version 1.0.0                          ║
+║                                                                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                         TABLE OF CONTENTS
+
+1.  Introduction
+    1.1. What is RAG?
+    1.2. Why RAG for Legal Cases?
+    1.3. System Overview
+
+2.  Architecture
+    2.1. High-Level Architecture
+    2.2. Component Breakdown
+    2.3. Data Flow
+
+3.  Installation & Setup
+    3.1. Prerequisites
+    3.2. Step-by-Step Installation
+    3.3. Configuration
+
+4.  User Guide
+    4.1. Using the Knowledge Base
+    4.2. Asking Questions
+    4.3. Understanding Responses
+
+5.  Developer Guide
+    5.1. Project Structure
+    5.2. Code Overview
+    5.3. API Endpoints
+    5.4. Adding New Features
+
+6.  Troubleshooting
+    6.1. Common Issues
+    6.2. FAQ
+
+7.  Future Enhancements
+
+═══════════════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────────────
+
+1. INTRODUCTION
+
+1.1. What is RAG?
+
+RAG (Retrieval-Augmented Generation) is a technique that combines:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  RETRIEVAL              +              GENERATION                           │
+│  ─────────                             ──────────                           │
+│  Search knowledge base                 Generate answer using LLM            │
+│  (Qdrant Vector DB)                    (Gemini / Groq)                     │
+│                                                                             │
+│  Result: Accurate, context-aware answers with sources                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1.2. Why RAG for Legal Cases?
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LEGAL CHALLENGE                    RAG SOLUTION                            │
+│  ────────────────                   ─────────────                           │
+│  ✅ Case-specific context           → Vector search for relevant info       │
+│  ✅ Need for accurate sources       → Citations and references              │
+│  ✅ Legal terminology               → Domain-specific knowledge base        │
+│  ✅ Complex queries                 → Hybrid search (vector + keyword)      │
+│  ✅ Evolving knowledge              → Update knowledge base anytime          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1.3. System Overview
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│         ┌─────────────────────────────────────────────────────────┐        │
+│         │                     USER                                │        │
+│         └─────────────────────┬───────────────────────────────────┘        │
+│                               │                                            │
+│                               ▼                                            │
+│         ┌─────────────────────────────────────────────────────────┐        │
+│         │                  STREAMLIT UI                           │        │
+│         │  - Ask Questions   - Upload PDF    - View Sources      │        │
+│         └─────────────────────┬───────────────────────────────────┘        │
+│                               │                                            │
+│                               ▼                                            │
+│         ┌─────────────────────────────────────────────────────────┐        │
+│         │              RAG SERVICE (FastAPI)                      │        │
+│         │  ┌─────────────────────────────────────────────────┐   │        │
+│         │  │         QUERY CLASSIFIER                        │   │        │
+│         │  │    Is it a Case/Legal/General question?         │   │        │
+│         │  └─────────────────┬───────────────────────────────┘   │        │
+│         │                    │                                    │        │
+│         │  ┌─────────────────▼───────────────────────────────┐   │        │
+│         │  │         LEGAL RESEARCHER                        │   │        │
+│         │  │         Search Qdrant Knowledge Base            │   │        │
+│         │  └─────────────────┬───────────────────────────────┘   │        │
+│         │                    │                                    │        │
+│         │  ┌─────────────────▼───────────────────────────────┐   │        │
+│         │  │         RESPONSE GENERATOR                      │   │        │
+│         │  │         LLM (Gemini / Groq)                     │   │        │
+│         │  └──────────────────────────────────────────────────┘   │        │
+│         └─────────────────────────────────────────────────────────┘        │
+│                               │                                            │
+│              ┌────────────────┼────────────────┐                          │
+│              ▼                ▼                ▼                          │
+│         ┌─────────┐    ┌─────────┐    ┌─────────┐                         │
+│         │ QDRANT  │    │  PDF    │    │ BHARAT  │                         │
+│         │ VECTOR  │    │ STORAGE │    │ COURTS  │                         │
+│         │   DB    │    │         │    │   API   │                         │
+│         └─────────┘    └─────────┘    └─────────┘                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+2. ARCHITECTURE
+
+2.1. High-Level Architecture
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    PRESENTATION LAYER                               │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │  Streamlit   │  │  API Client  │  │  Web UI      │             │   │
+│   │  │  (Frontend)  │  │  (REST)      │  │  (Swagger)   │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                       │
+│                                    ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    APPLICATION LAYER                                │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │    RAG       │  │  QUERY       │  │  RESPONSE    │             │   │
+│   │  │  PIPELINE    │◄─┤  CLASSIFIER  │  │  GENERATOR   │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │   LEGAL      │  │  DOCUMENT    │  │     CASE     │             │   │
+│   │  │  RESEARCHER  │  │  PROCESSOR   │  │   CONTEXT    │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                       │
+│                                    ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    SERVICE LAYER                                    │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │  LLM         │  │  QDRANT      │  │  EMBEDDING   │             │   │
+│   │  │  GATEWAY     │  │  SERVICE     │  │  SERVICE     │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │  BHARAT      │  │  PDF         │  │  CACHE       │             │   │
+│   │  │  API CLIENT  │  │  EXTRACTOR   │  │  SERVICE     │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                       │
+│                                    ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    DATA LAYER                                       │   │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
+│   │  │   QDRANT     │  │   PDF        │  │   CACHE      │             │   │
+│   │  │   VECTOR DB  │  │   STORAGE    │  │   MEMORY     │             │   │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘             │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+2.2. Component Breakdown
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT                    PURPOSE                                       │
+│  ─────────                    -------                                       │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  QUERY CLASSIFIER                                                   │   │
+│  │  ─────────────────                                                  │   │
+│  │  - Detects if question is Case/Legal/General                       │   │
+│  │  - Extracts keywords and topics                                    │   │
+│  │  - Determines confidence scores                                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  LEGAL RESEARCHER                                                   │   │
+│  │  ─────────────────                                                  │   │
+│  │  - Searches Qdrant for relevant legal knowledge                    │   │
+│  │  - Returns chunks with relevance scores                            │   │
+│  │  - Supports semantic search                                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  CASE CONTEXT PROVIDER                                              │   │
+│  │  ─────────────────────                                             │   │
+│  │  - Fetches case details from Bharat API                            │   │
+│  │  - Provides case context to RAG pipeline                           │   │
+│  │  - Formats case data for LLM                                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  RAG PIPELINE                                                       │   │
+│  │  ─────────────                                                      │   │
+│  │  - Orchestrates the entire RAG flow                                │   │
+│  │  - Combines legal + case context                                   │   │
+│  │  - Calls response generator                                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  RESPONSE GENERATOR                                                 │   │
+│  │  ───────────────────                                                │   │
+│  │  - Generates final answer using LLM                                │   │
+│  │  - Formats response with sources                                   │   │
+│  │  - Supports multi-language                                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  DOCUMENT PROCESSOR                                                 │   │
+│  │  ───────────────────                                                │   │
+│  │  - Processes PDF uploads                                           │   │
+│  │  - Extracts text, chunks, embeds                                   │   │
+│  │  - Indexes into Qdrant                                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+2.3. Data Flow
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  1. USER ASKS QUESTION                                                     │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  "What is Section 302 IPC?"                                     │   │
+│     └──────────────────────────┬──────────────────────────────────────┘   │
+│                                │                                           │
+│                                ▼                                           │
+│  2. QUERY CLASSIFICATION                                                   │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  Type: LEGAL QUESTION                                            │   │
+│     │  Confidence: 0.95                                               │   │
+│     └──────────────────────────┬──────────────────────────────────────┘   │
+│                                │                                           │
+│                                ▼                                           │
+│  3. LEGAL RESEARCH (Qdrant Search)                                        │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  Found 3 relevant chunks from IPC                               │   │
+│     │  Chunk 1: "Section 302 - Punishment for murder..."             │   │
+│     │  Chunk 2: "Section 303 - Punishment for murder..."             │   │
+│     └──────────────────────────┬──────────────────────────────────────┘   │
+│                                │                                           │
+│                                ▼                                           │
+│  4. RESPONSE GENERATION (LLM)                                             │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  Gemini/Groq generates answer with sources                      │   │
+│     │  "Section 302 IPC states that..."                               │   │
+│     └──────────────────────────┬──────────────────────────────────────┘   │
+│                                │                                           │
+│                                ▼                                           │
+│  5. RESPONSE FORMATTING                                                   │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  {                                                              │   │
+│     │    "answer": "Section 302 IPC states...",                      │   │
+│     │    "sources": [                                                │   │
+│     │      { "title": "IPC Section 302", "relevance": 0.95 }        │   │
+│     │    ]                                                           │   │
+│     │  }                                                             │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+3. INSTALLATION & SETUP
+
+3.1. Prerequisites
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  REQUIREMENT                    MINIMUM VERSION                            │
+│  ───────────                    ────────────────                           │
+│                                                                             │
+│  🐍 Python                      3.10 or higher                             │
+│  🐳 Docker                      20.10 or higher                            │
+│  💾 RAM                         4 GB or higher                             │
+│  💿 Disk Space                  5 GB free                                  │
+│  🔑 API Keys:                                                             │
+│     - Gemini API Key             (Get from Google AI Studio)              │
+│     - Groq API Key               (Get from Groq Console)                  │
+│     - HuggingFace Token          (Optional, for embeddings)               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+3.2. Step-by-Step Installation
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  STEP 1: Clone/Download Project                                            │
+│  ─────────────────────────────────                                         │
+│  git clone https://github.com/yourusername/adalat-rag-service.git          │
+│  cd adalat-rag-service                                                     │
+│                                                                             │
+│  STEP 2: Create Virtual Environment                                        │
+│  ──────────────────────────────────────                                    │
+│  python -m venv venv                                                       │
+│  venv\Scripts\activate          (Windows)                                  │
+│  source venv/bin/activate       (Mac/Linux)                                │
+│                                                                             │
+│  STEP 3: Install Dependencies                                              │
+│  ─────────────────────────────                                             │
+│  pip install -r requirements.txt                                           │
+│                                                                             │
+│  STEP 4: Configure Environment                                             │
+│  ─────────────────────────────                                             │
+│  cp .env.example .env                                                      │
+│  # Edit .env file with your API keys                                       │
+│                                                                             │
+│  STEP 5: Start Qdrant (Docker)                                            │
+│  ──────────────────────────────                                            │
+│  docker run -d -p 6333:6333 --name qdrant qdrant/qdrant                    │
+│                                                                             │
+│  STEP 6: Start the RAG Service                                             │
+│  ─────────────────────────────                                             │
+│  uvicorn app.main:app --reload                                             │
+│                                                                             │
+│  STEP 7: Open in Browser                                                   │
+│  ─────────────────────────────                                             │
+│  API Docs: http://localhost:8000/docs                                      │
+│  Qdrant UI: http://localhost:6333/dashboard                                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+3.3. Configuration
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  .env FILE SETTINGS                                                        │
+│  ────────────────                                                          │
+│                                                                             │
+│  # Required                                                                 │
+│  GEMINI_API_KEY=your_gemini_key                                             │
+│  GROQ_API_KEY=your_groq_key                                                │
+│                                                                             │
+│  # Qdrant (Local)                                                          │
+│  QDRANT_URL=http://localhost:6333                                          │
+│  QDRANT_COLLECTION=legal_knowledge                                         │
+│                                                                             │
+│  # Embedding Model                                                         │
+│  EMBEDDING_MODEL=all-MiniLM-L6-v2                                          │
+│  CHUNK_SIZE=512                                                            │
+│  CHUNK_OVERLAP=50                                                          │
+│                                                                             │
+│  # Logging                                                                 │
+│  LOG_LEVEL=INFO                                                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+4. USER GUIDE
+
+4.1. Using the Knowledge Base
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  HOW TO UPLOAD DOCUMENTS                                                   │
+│  ───────────────────────                                                   │
+│                                                                             │
+│  1. Go to Knowledge Base page in the UI                                    │
+│  2. Click "Upload PDF" tab                                                │
+│  3. Select document type (Bare Act, Judgment, etc.)                       │
+│  4. Enter document name and description                                   │
+│  5. Select PDF file to upload                                             │
+│  6. Click "Upload Document"                                               │
+│                                                                             │
+│  SUPPORTED DOCUMENT TYPES                                                  │
+│  ──────────────────────────                                                │
+│  ✅ Bare Acts           (IPC, CrPC, Evidence Act, etc.)                   │
+│  ✅ Judgments           (Supreme Court, High Court)                       │
+│  ✅ Case Laws           (Legal precedents)                                │
+│  ✅ Legal Articles      (Commentaries, interpretations)                   │
+│  ✅ Court Orders        (Specific court orders)                           │
+│  ✅ Other               (Any legal document)                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+4.2. Asking Questions
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  HOW TO ASK QUESTIONS                                                      │
+│  ──────────────────────                                                    │
+│                                                                             │
+│  1. Go to the Chat interface                                               │
+│  2. Type your question in the chat box                                     │
+│  3. Press Enter to submit                                                 │
+│  4. RAG will search and generate response                                 │
+│  5. Response includes sources and references                              │
+│                                                                             │
+│  EXAMPLE QUESTIONS                                                         │
+│  ─────────────────                                                         │
+│  Legal Questions:                                                          │
+│  "What is Section 302 IPC?"                                               │
+│  "What is the punishment for theft?"                                      │
+│  "What are the grounds for bail?"                                         │
+│                                                                             │
+│  Case Questions:                                                           │
+│  "What is the status of my case?"                                         │
+│  "What sections apply in my case?"                                        │
+│  "When is my next hearing?"                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+4.3. Understanding Responses
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  RESPONSE FORMAT                                                           │
+│  ──────────────                                                             │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Answer: Section 302 IPC states that...                            │   │
+│  │                                                                     │   │
+│  │  📚 Sources:                                                       │   │
+│  │  ─────────────────                                                 │   │
+│  │  1. Indian Penal Code - Section 302 (Relevance: 0.95)              │   │
+│  │  2. Supreme Court Judgment - 2024 (Relevance: 0.82)               │   │
+│  │  3. Legal Commentary (Relevance: 0.75)                            │   │
+│  │                                                                     │   │
+│  │  🤖 Generated using Gemini                                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  SCORING SYSTEM                                                            │
+│  ─────────────                                                             │
+│                                                                             │
+│  1.0     Perfect match - Highly relevant                                   │
+│  0.8-0.9 Very relevant                                                     │
+│  0.6-0.7 Moderately relevant                                               │
+│  0.5     Low relevance - Consider other sources                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+5. DEVELOPER GUIDE
+
+5.1. Project Structure
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PROJECT STRUCTURE                                                         │
+│  ─────────────────                                                         │
+│                                                                             │
+│  adalat-rag-service/                                                       │
+│  ├── app/                                                                 │
+│  │   ├── api/               # REST API endpoints                          │
+│  │   │   ├── routes.py      # All API routes                              │
+│  │   │   └── models.py      # Pydantic models                             │
+│  │   ├── agents/            # RAG agents                                  │
+│  │   │   ├── query_classifier.py                                          │
+│  │   │   ├── legal_researcher.py                                          │
+│  │   │   ├── case_context_provider.py                                     │
+│  │   │   ├── rag_pipeline.py                                              │
+│  │   │   └── response_generator.py                                        │
+│  │   ├── services/          # External services                           │
+│  │   │   ├── llm_gateway.py  # Gemini + Groq                              │
+│  │   │   ├── qdrant_service.py # Qdrant operations                        │
+│  │   │   └── embedding_service.py # Embeddings                            │
+│  │   ├── core/              # Core functionality                          │
+│  │   │   ├── config.py      # Configuration                               │
+│  │   │   ├── logging.py     # Logging setup                               │
+│  │   │   └── exceptions.py  # Custom exceptions                           │
+│  │   ├── schemas/           # Data schemas                                │
+│  │   └── main.py            # FastAPI entry point                         │
+│  ├── frontend/              # Streamlit UI components                     │
+│  ├── data/                  # Data storage                                 │
+│  └── tests/                 # Unit tests                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+5.2. Code Overview
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  KEY PATTERNS                                                              │
+│  ────────────                                                              │
+│                                                                             │
+│  1. Agent Pattern                                                          │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  class QueryClassifier:                                         │   │
+│     │      def classify(self, query: str) -> str:                    │   │
+│     │          # Implementation                                      │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  2. Service Pattern                                                        │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  class QdrantService:                                           │   │
+│     │      def search(self, query: str) -> List[Dict]:               │   │
+│     │          # Implementation                                      │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  3. Pipeline Pattern                                                       │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  class RAGPipeline:                                             │   │
+│     │      def process(self, query: str) -> Dict:                    │   │
+│     │          # Step 1: Classify                                    │   │
+│     │          # Step 2: Search                                      │   │
+│     │          # Step 3: Generate                                    │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+5.3. API Endpoints
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  API ENDPOINTS                                                             │
+│  ─────────────                                                             │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  POST /api/v1/query                                                │   │
+│  │  ─────────────────                                                │   │
+│  │  Request:                                                         │   │
+│  │  {                                                               │   │
+│  │    "query": "What is Section 302 IPC?",                          │   │
+│  │    "language": "English",                                        │   │
+│  │    "case_context": {                                             │   │
+│  │      "cnr": "DLHC010964712024"                                   │   │
+│  │    }                                                             │   │
+│  │  }                                                               │   │
+│  │                                                                   │   │
+│  │  Response:                                                        │   │
+│  │  {                                                               │   │
+│  │    "success": true,                                              │   │
+│  │    "answer": "Section 302 IPC states...",                       │   │
+│  │    "sources": [...],                                            │   │
+│  │    "provider": "Gemini"                                         │   │
+│  │  }                                                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  POST /api/v1/documents/upload                                     │   │
+│  │  ─────────────────────────────────                                  │   │
+│  │  Request: Multipart form with PDF file and metadata                 │   │
+│  │                                                                   │   │
+│  │  Response:                                                         │   │
+│  │  {                                                               │   │
+│  │    "success": true,                                              │   │
+│  │    "document_id": "doc_123",                                     │   │
+│  │    "pages": 250,                                                │   │
+│  │    "chunks": 1250                                               │   │
+│  │  }                                                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  GET /health                                                       │   │
+│  │  ──────────                                                        │   │
+│  │  Response: {"status": "healthy", "service": "adalat-rag"}          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+5.4. Adding New Features
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  HOW TO ADD A NEW AGENT                                                    │
+│  ────────────────────────                                                  │
+│                                                                             │
+│  1. Create new file in app/agents/                                        │
+│  2. Define your agent class                                               │
+│  3. Add to RAG pipeline                                                  │
+│  4. Write tests                                                          │
+│                                                                             │
+│  EXAMPLE:                                                                 │
+│  ────────────────────────────────────────────────────────────────────     │
+│  # app/agents/new_agent.py                                                │
+│                                                                             │
+│  from app.core.logging import get_logger                                   │
+│                                                                             │
+│  class NewAgent:                                                          │
+│      def __init__(self):                                                 │
+│          self.logger = get_logger(__name__)                              │
+│                                                                             │
+│      def process(self, data: dict) -> dict:                              │
+│          # Your logic here                                               │
+│          return result                                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+6. TROUBLESHOOTING
+
+6.1. Common Issues
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ISSUE                             SOLUTION                                │
+│  ─────                             ────────                                │
+│                                                                             │
+│  🐳 Qdrant not starting            1. Run: docker ps -a                   │
+│                                    2. If stopped: docker start qdrant      │
+│                                    3. If removed: docker run -d -p 6333:6333│
+│                                       --name qdrant qdrant/qdrant          │
+│                                                                             │
+│  🔑 API Key errors                 1. Check GEMINI_API_KEY in .env        │
+│                                    2. Check GROQ_API_KEY in .env          │
+│                                    3. Check HF_TOKEN in .env              │
+│                                                                             │
+│  💾 Out of memory                  1. Reduce CHUNK_SIZE in .env           │
+│                                    2. Use smaller PDF files               │
+│                                    3. Restart Qdrant                     │
+│                                                                             │
+│  🐍 Import errors                  1. Activate virtual environment        │
+│                                    2. Run: pip install -r requirements.txt│
+│                                    3. Check Python path                  │
+│                                                                             │
+│  🔌 Port conflicts                 1. Change Qdrant port: -p 6334:6333   │
+│                                    2. Change API port in .env             │
+│                                    3. Check: netstat -ano | findstr :PORT │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+6.2. FAQ
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Q: How does RAG work?                                                    │
+│  A: RAG combines document retrieval with LLM generation. It searches       │
+│     the knowledge base (Qdrant) for relevant chunks and then sends         │
+│     them to the LLM to generate a context-aware answer.                   │
+│                                                                             │
+│  Q: What is Qdrant?                                                       │
+│  A: Qdrant is a vector database. It stores embeddings of text chunks       │
+│     and enables fast semantic similarity search.                          │
+│                                                                             │
+│  Q: Can I use any LLM?                                                    │
+│  A: Yes. Currently supported: Gemini (primary) and Groq (fallback).        │
+│     You can add more by extending LLMGateway.                             │
+│                                                                             │
+│  Q: How much storage does the knowledge base need?                         │
+│  A: Depends on document size. The free tier of Qdrant gives 4 GB,          │
+│     which is enough for ~1 million vectors.                               │
+│                                                                             │
+│  Q: How do I backup my knowledge base?                                    │
+│  A: Use Qdrant snapshots or export vectors to JSON.                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+7. FUTURE ENHANCEMENTS
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  🔮 PLANNED FEATURES                                                       │
+│  ──────────────────                                                       │
+│                                                                             │
+│  ✅ Multi-language support (Hindi, Tamil, Telugu, Marathi)                 │
+│  ✅ Voice input support                                                    │
+│  ✅ PDF chat (upload and ask questions)                                   │
+│  ✅ Case summarization                                                    │
+│  ✅ Document comparison                                                   │
+│  ✅ Legal term definitions                                               │
+│  ✅ Citation generation                                                   │
+│  ✅ Export to PDF/Word                                                    │
+│  ✅ Mobile app support                                                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                    END OF GUIDE
+
+═══════════════════════════════════════════════════════════════════════════════
